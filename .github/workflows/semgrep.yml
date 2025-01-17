@@ -59,6 +59,6 @@ jobs:
           -d '{
             "scan_type": "Semgrep",
             "file": "'$(cat semgrep-results.json | base64)'",
-            "engagement": "semgrep",
+            "engagement": "Semgrep",
             "minimum_severity": "Info"
            }'
