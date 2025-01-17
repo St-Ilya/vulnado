@@ -47,3 +47,18 @@ jobs:
         with:
           sarif_file: semgrep.sarif
         if: always()
+
+      - name: Upload Semgrep Results to DefectDojo
+        env:
+          DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
+          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+        run: |
+          curl -X POST "${DEFECTDOJO_URL}/api/v2/import-scan/" \
+          -H "Authorization: Token $DEFECTDOJO_API_KEY" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "scan_type": "Semgrep",
+            "file": "'$(cat semgrep-results.json | base64)'",
+            "engagement": "semgrep",
+            "minimum_severity": "Info"
+           }'
