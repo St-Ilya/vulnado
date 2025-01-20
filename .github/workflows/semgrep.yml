@@ -54,9 +54,15 @@ jobs:
           DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
         run: |
-          curl -X POST "${DEFECTDOJO_URL}/api/v2/import-scan/" \
-          -H "Authorization: Token $DEFECTDOJO_API_KEY" \
-          -F 'scan_type=Semgrep' \
-          -F "file=@semgrep-results.json" \
-          -F 'engagement=Semgrep' \
-          -F 'minimum_severity=Info'
+          if [ -f semgrep-results.json ]; then
+            curl -X POST "${DEFECTDOJO_URL}/api/v2/import-scan/" \
+            -H "Authorization: Token $DEFECTDOJO_API_KEY" \
+            -F 'scan_type=Semgrep' \
+            -F "file=@semgrep-results.json" \
+            -F 'engagement=Semgrep' \
+            -F 'minimum_severity=Info'
+          else
+            echo "Error: File semgrep-results.json not found!"
+            exit 1
+          fi
+
