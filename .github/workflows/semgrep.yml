@@ -1,68 +1,44 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
-# This workflow file requires a free account on Semgrep.dev to
-# manage rules, file ignores, notifications, and more.
-#
-# See https://semgrep.dev/docs
-
-name: Semgrep
+name: Semgrep Scan and Upload to DefectDojo
 
 on:
   push:
-    branches: [ "master" ]
+    branches: ["master"]
   pull_request:
-    # The branches below must be a subset of the branches above
-    branches: [ "master" ]
-  schedule:
-    - cron: '21 14 * * 6'
+    branches: ["master"]
 
 permissions:
   contents: read
 
 jobs:
   semgrep:
-    permissions:
-      contents: read # for actions/checkout to fetch code
-      security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
-      actions: read # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
-    name: Scan
+    name: Semgrep Scan and Upload
     runs-on: ubuntu-latest
     steps:
-      # Checkout project source
-      - uses: actions/checkout@v4
+      # Шаг 1: Клонирование репозитория
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      # Scan code using project's configuration on https://semgrep.dev/manage
-      - uses: returntocorp/semgrep-action@fcd5ab7459e8d91cb1777481980d1b18b4fc6735
+      # Шаг 2: Выполнение Semgrep и сохранение результатов в JSON
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@fcd5ab7459e8d91cb1777481980d1b18b4fc6735
         with:
-          output: semgrep-results.json
-          publishToken: ${{ secrets.SEMGREP_APP_TOKEN }}
-          publishDeployment: ${{ secrets.SEMGREP_DEPLOYMENT_ID }}
-          generateSarif: "1"
+          output: semgrep-results.json  # Результаты сохраняются в этот файл
 
-      # Upload SARIF file generated in previous step
-      - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: semgrep.sarif
-        if: always()
-
+      # Шаг 3: Отправка результатов в DefectDojo
       - name: Upload Semgrep Results to DefectDojo
         env:
           DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
         run: |
           if [ -f semgrep-results.json ]; then
-            curl -X POST "${DEFECTDOJO_URL}/api/v2/import-scan/" \
+            curl -X POST "${DEFECTDOJO_URL}/api/v2/import_scan_results/" \
             -H "Authorization: Token $DEFECTDOJO_API_KEY" \
+            -H "Content-Type: multipart/form-data" \
             -F 'scan_type=Semgrep' \
             -F "file=@semgrep-results.json" \
             -F 'engagement=Semgrep' \
             -F 'minimum_severity=Info'
           else
-            echo "Error: File semgrep-results.json not found!"
+            echo "Error: semgrep-results.json not found!"
             exit 1
           fi
-
