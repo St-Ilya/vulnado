@@ -54,12 +54,14 @@ jobs:
           DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
         run: |
-          curl -X POST "${DEFECTDOJO_URL}/api/v2/import-scan/" \
-          -H "Authorization: Token $DEFECTDOJO_API_KEY" \
-          -H "Content-Type: application/json" \
-          -d '{
+          echo '{
             "scan_type": "Semgrep",
-            "file": "'$(cat semgrep.sarif | base64)'",
+            "file": "'"$BASE64_CONTENT"'",
             "engagement": "Semgrep",
             "minimum_severity": "Info"
-           }'
+          }' > payload.json
+            # Отправляем запрос с корректным JSON
+            curl -X POST "${DEFECTDOJO_URL}/api/v2/import-scan/" \
+            -H "Authorization: Token $DEFECTDOJO_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @payload.json
