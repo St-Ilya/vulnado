@@ -11,18 +11,26 @@ permissions:
 
 jobs:
   semgrep:
-    name: Semgrep Scan and Upload
     runs-on: ubuntu-latest
+    container:
+      image: returntocorp/semgrep:1.78.0
+
     steps:
-      # Шаг 1: Клонирование репозитория
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # Шаг 2: Выполнение Semgrep и сохранение результатов в JSON
       - name: Run Semgrep
-        uses: returntocorp/semgrep-action@fcd5ab7459e8d91cb1777481980d1b18b4fc6735
+        run: | 
+          semgrep \
+            --gitlab-sast --output semgrep-results.json\
+            --metrics=off \
+            --config="p/default"
+
+      - name: Save raw report
+        uses: actions/upload-artifact@v4
         with:
-          output: semgrep-results.json  # Результаты сохраняются в этот файл
+          name: raw_report
+          path: semgrep-results.json
 
       # Шаг 3: Отправка результатов в DefectDojo
       - name: Upload Semgrep Results to DefectDojo
