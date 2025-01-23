@@ -22,7 +22,7 @@ jobs:
       - name: Run Semgrep
         run: | 
           semgrep \
-            --gitlab-sast --output semgrep-results.json\
+            --output semgrep-results.json\
             --metrics=off \
             --config="p/default"
 
