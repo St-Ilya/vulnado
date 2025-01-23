@@ -43,6 +43,7 @@ jobs:
             curl -X POST "${DEFECTDOJO_URL}/api/v2/import-scan/" \
             -H "Authorization: Token $DEFECTDOJO_API_KEY" \
             -H "Content-Type: multipart/form-data" \
+            -F 'product_name=SemgaTest' \
             -F 'scan_type=Semgrep JSON Report' \
             -F "file=@semgrep-results.json" \
             -F 'minimum_severity=Info'
