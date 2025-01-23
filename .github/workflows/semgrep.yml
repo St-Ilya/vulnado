@@ -40,7 +40,7 @@ jobs:
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
         run: |
           if [ -f semgrep-results.json ]; then
-            curl -X POST "${DEFECTDOJO_URL}/api/v2/import_scan_results/" \
+            curl -X POST "${DEFECTDOJO_URL}/api/v2/import-scan/" \
             -H "Authorization: Token $DEFECTDOJO_API_KEY" \
             -H "Content-Type: multipart/form-data" \
             -F 'scan_type=Semgrep' \
