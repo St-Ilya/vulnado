@@ -41,42 +41,38 @@ jobs:
           REPO_NAME=$(basename $GITHUB_REPOSITORY)
           PRODUCT_NAME="SemgaTest"
 
-          # Check if product exists
+          # Step 1: Get Product ID
           PRODUCT_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/products/?name=${PRODUCT_NAME}" \
             -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
 
           if [ "$PRODUCT_ID" == "null" ]; then
-            # Create product if not exists
-            PRODUCT_ID=$(curl -s -X POST "${DEFECTDOJO_URL}/api/v2/products/" \
-              -H "Authorization: Token $DEFECTDOJO_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d '{"name": "'"$PRODUCT_NAME"'"}' | jq -r '.id')
-            echo "Product $PRODUCT_NAME created with ID $PRODUCT_ID"
-          else
-            echo "Product $PRODUCT_NAME already exists with ID $PRODUCT_ID"
+            echo "Error: Product $PRODUCT_NAME not found in DefectDojo!"
+            exit 1
           fi
 
-          # Check if engagement exists
-          ENGAGEMENT_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/engagements/?name=${REPO_NAME}" \
+          echo "Product ID for $PRODUCT_NAME: $PRODUCT_ID"
+
+          # Step 2: Check or Create Engagement
+          ENGAGEMENT_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/engagements/?product_id=${PRODUCT_ID}&name=${REPO_NAME}" \
             -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
 
           if [ "$ENGAGEMENT_ID" == "null" ]; then
-            # Create engagement if not exists
+            echo "Engagement for $REPO_NAME not found. Creating new engagement."
             ENGAGEMENT_ID=$(curl -s -X POST "${DEFECTDOJO_URL}/api/v2/engagements/" \
               -H "Authorization: Token $DEFECTDOJO_API_KEY" \
               -H "Content-Type: application/json" \
               -d '{
                 "name": "'"$REPO_NAME"'",
-                "product": "'"$PRODUCT_ID"'",
+                "product": '"$PRODUCT_ID"',
                 "status": "In Progress",
                 "engagement_type": "CI/CD"
               }' | jq -r '.id')
-            echo "Engagement $REPO_NAME created with ID $ENGAGEMENT_ID"
+            echo "New Engagement created with ID: $ENGAGEMENT_ID"
           else
-            echo "Engagement $REPO_NAME already exists with ID $ENGAGEMENT_ID"
+            echo "Engagement $REPO_NAME already exists with ID: $ENGAGEMENT_ID"
           fi
 
-          # Upload the scan results
+          # Step 3: Upload the scan results
           if [ -f semgrep-results.json ]; then
             curl -X POST "${DEFECTDOJO_URL}/api/v2/import-scan/" \
               -H "Authorization: Token $DEFECTDOJO_API_KEY" \
