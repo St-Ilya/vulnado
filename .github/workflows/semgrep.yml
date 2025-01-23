@@ -44,6 +44,7 @@ jobs:
             -H "Authorization: Token $DEFECTDOJO_API_KEY" \
             -H "Content-Type: multipart/form-data" \
             -F 'product_name=SemgaTest' \
+            -F 'auto_create_context=True' \
             -F 'scan_type=Semgrep JSON Report' \
             -F "file=@semgrep-results.json" \
             -F 'minimum_severity=Info'
