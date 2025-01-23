@@ -1,4 +1,4 @@
-name: Semgrep Scan and Upload to DefectDojo
+name: Security Scans and Upload to DefectDojo
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  semgrep:
+  security-scans:
     runs-on: ubuntu-latest
     container:
       image: returntocorp/semgrep:1.78.0
@@ -27,61 +27,111 @@ jobs:
             --metrics=off \
             --config="p/default"
 
-      - name: Save raw report
-        uses: actions/upload-artifact@v4
-        with:
-          name: raw_report
-          path: semgrep-results.json
+      - name: Install Python and dependencies
+        run: |
+          apt-get update
+          apt-get install -y python3 python3-pip
+          pip3 install requests
+
+      - name: Create upload script
+        run: |
+          cat << 'EOF' > upload_to_defectdojo.py
+          import requests
+          import sys
+          import os
+          from datetime import datetime
+
+          class DefectDojoUploader:
+              def init(self, url, api_key):
+                  self.url = url
+                  self.headers = {'Authorization': f'Token {api_key}'}
+
+              def find_engagement(self, product_id, repo_name):
+                  response = requests.get(
+                      f"{self.url}/api/v2/engagements/",
+                      headers=self.headers,
+                      params={'name': f"Scan-{repo_name}"}
+                  )
+                  results = response.json().get('results', [])
+                  return results[0]['id'] if results else None
+
+              def create_engagement(self, product_id, repo_name):
+                  data = {
+                      'name': f"Scan-{repo_name}",
+                      'product': product_id,
+                      'target_start': datetime.now().strftime('%Y-%m-%d'),
+                      'target_end': datetime.now().strftime('%Y-%m-%d'),
+                      'status': 'In Progress'
+                  }
+                  response = requests.post(
+                      f"{self.url}/api/v2/engagements/",
+                      headers=self.headers,
+                      json=data
+                  )
+                  return response.json()['id']
+
+              def get_product_id(self, product_name):
+                  response = requests.get(
+                      f"{self.url}/api/v2/products/",
+                      headers=self.headers,
+                      params={'name': product_name}
+                  )
+                  results = response.json().get('results', [])
+                  return results[0]['id'] if results else None
+
+              def upload_scan(self, file_path, scan_type, product_name, repo_name):
+                  product_id = self.get_product_id(product_name)
+                  if not product_id:
+                      print(f"Error: Product {product_name} not found")
+                      return False
+
+                  engagement_id = self.find_engagement(product_id, repo_name)
+                  if not engagement_id:
+                      engagement_id = self.create_engagement(product_id, repo_name)
+
+                  with open(file_path, 'rb') as f:
+                      files = {'file': f}
+                      data = {
+                          'engagement': engagement_id,
+                          'scan_type': scan_type,
+                          'minimum_severity': 'Info',
+                          'active': True,
+                          'verified': True,
+                          'close_old_findings': True,
+                          'do_not_reactivate': True
+                      }
+                      response = requests.post(
+                          f"{self.url}/api/v2/import-scan/",
+                          headers=self.headers,
+                          files=files,
+                          data=data
+                      )
+                  return response.status_code == 201
+                  if name == 'main':
+              uploader = DefectDojoUploader(
+                  os.environ['DEFECTDOJO_URL'],
+                  os.environ['DEFECTDOJO_API_KEY']
+              )
+              success = uploader.upload_scan(
+                  sys.argv[1],  # file_path
+                  sys.argv[2],  # scan_type
+                  sys.argv[3],  # product_name
+                  sys.argv[4]   # repo_name
+              )
+              sys.exit(0 if success else 1)
+          EOF
 
       - name: Upload Semgrep Results to DefectDojo
         env:
           DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
         run: |
-          REPO_NAME=$(basename $GITHUB_REPOSITORY)
-          PRODUCT_NAME="SemgaTest"
-
-          # Step 1: Get Product ID
-          PRODUCT_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/products/?name=${PRODUCT_NAME}" \
-            -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
-
-          if [ "$PRODUCT_ID" == "null" ]; then
-            echo "Error: Product $PRODUCT_NAME not found in DefectDojo!"
-            exit 1
-          fi
-
-          echo "Product ID for $PRODUCT_NAME: $PRODUCT_ID"
-
-          # Step 2: Check or Create Engagement
-          ENGAGEMENT_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/engagements/?product_id=${PRODUCT_ID}&name=${REPO_NAME}" \
-            -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
-
-          if [ "$ENGAGEMENT_ID" == "null" ]; then
-            echo "Engagement for $REPO_NAME not found. Creating new engagement."
-            ENGAGEMENT_ID=$(curl -s -X POST "${DEFECTDOJO_URL}/api/v2/engagements/" \
-              -H "Authorization: Token $DEFECTDOJO_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d '{
-                "name": "'"$REPO_NAME"'",
-                "product": '"$PRODUCT_ID"',
-                "status": "In Progress",
-                "engagement_type": "CI/CD"
-              }' | jq -r '.id')
-            echo "New Engagement created with ID: $ENGAGEMENT_ID"
-          else
-            echo "Engagement $REPO_NAME already exists with ID: $ENGAGEMENT_ID"
-          fi
-
-          # Step 3: Upload the scan results
           if [ -f semgrep-results.json ]; then
-            curl -X POST "${DEFECTDOJO_URL}/api/v2/import-scan/" \
-              -H "Authorization: Token $DEFECTDOJO_API_KEY" \
-              -H "Content-Type: multipart/form-data" \
-              -F 'scan_type=Semgrep JSON Report' \
-              -F "file=@semgrep-results.json" \
-              -F "engagement=$ENGAGEMENT_ID" \
-              -F 'auto_reimport=True' \
-              -F 'minimum_severity=Info'
+            python3 upload_to_defectdojo.py \
+              "semgrep-results.json" \
+              "Semgrep JSON Report" \
+              "SemgrepTest" \
+              "${{ github.repository }}"
           else
             echo "Error: semgrep-results.json not found!"
             exit 1
