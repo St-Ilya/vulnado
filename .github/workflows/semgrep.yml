@@ -45,7 +45,7 @@ jobs:
             -H "Content-Type: multipart/form-data" \
             -F 'scan_type=Semgrep' \
             -F "file=@semgrep-results.json" \
-            -F 'engagement=Semgrep' \
+            -F 'engagement=5' \
             -F 'minimum_severity=Info'
           else
             echo "Error: semgrep-results.json not found!"
