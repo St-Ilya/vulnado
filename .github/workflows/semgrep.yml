@@ -23,65 +23,29 @@ jobs:
         run: | 
           semgrep \
             --json \
-            --output semgrep-results.json \
+            --output semgrep-results.json\
             --metrics=off \
             --config="p/default"
-
       - name: Save raw report
         uses: actions/upload-artifact@v4
         with:
           name: raw_report
           path: semgrep-results.json
 
+      # Шаг 3: Отправка результатов в DefectDojo
       - name: Upload Semgrep Results to DefectDojo
         env:
           DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
         run: |
-          REPO_NAME=$(basename $GITHUB_REPOSITORY)
-          PRODUCT_NAME="SemgaTest"
-
-          # Step 1: Get Product ID
-          PRODUCT_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/products/?name=${PRODUCT_NAME}" \
-            -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
-
-          if [ "$PRODUCT_ID" == "null" ]; then
-            echo "Error: Product $PRODUCT_NAME not found in DefectDojo!"
-            exit 1
-          fi
-
-          echo "Product ID for $PRODUCT_NAME: $PRODUCT_ID"
-
-          # Step 2: Check or Create Engagement
-          ENGAGEMENT_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/engagements/?product_id=${PRODUCT_ID}&name=${REPO_NAME}" \
-            -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
-
-          if [ "$ENGAGEMENT_ID" == "null" ]; then
-            echo "Engagement for $REPO_NAME not found. Creating new engagement."
-            ENGAGEMENT_ID=$(curl -s -X POST "${DEFECTDOJO_URL}/api/v2/engagements/" \
-              -H "Authorization: Token $DEFECTDOJO_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d '{
-                "name": "'"$REPO_NAME"'",
-                "product": '"$PRODUCT_ID"',
-                "status": "In Progress",
-                "engagement_type": "CI/CD"
-              }' | jq -r '.id')
-            echo "New Engagement created with ID: $ENGAGEMENT_ID"
-          else
-            echo "Engagement $REPO_NAME already exists with ID: $ENGAGEMENT_ID"
-          fi
-
-          # Step 3: Upload the scan results
           if [ -f semgrep-results.json ]; then
             curl -X POST "${DEFECTDOJO_URL}/api/v2/import-scan/" \
-              -H "Authorization: Token $DEFECTDOJO_API_KEY" \
-              -H "Content-Type: multipart/form-data" \
-              -F 'scan_type=Semgrep JSON Report' \
-              -F "file=@semgrep-results.json" \
-              -F "engagement=$ENGAGEMENT_ID" \
-              -F 'auto_reimport=True' \
-              -F 'minimum_severity=Info'
+            -H "Authorization: Token $DEFECTDOJO_API_KEY" \
+            -H "Content-Type: multipart/form-data" \
+            -F 'scan_type=Semgrep JSON Report' \
+            -F "file=@semgrep-results.json" \
+            -F 'engagement=6' \
+            -F 'minimum_severity=Info'
           else
             echo "Error: semgrep-results.json not found!"
             exit 1
