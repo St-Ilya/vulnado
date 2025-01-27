@@ -33,48 +33,64 @@ jobs:
           name: raw_report
           path: semgrep-results.json
 
-      - name: Check and Create Product Type in DefectDojo
+      - name: Check and Create Product in DefectDojo
         env:
           DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
-          ORG_NAME: "SemmTest" # Название "организации" (типа продукта)
+          ORG_NAME: ${{ secrets.ORG_NAME }} # Название "организации" (продукта)
         run: |
-          echo "Checking if product type '${ORG_NAME}' exists in DefectDojo..."
+          echo "Checking if product type 'Custom Type' exists in DefectDojo..."
 
-          RESPONSE=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/product_types/" \
-            -H "Authorization: Token ${DEFECTDOJO_API_KEY}")
+          # Шаг 1: Проверка Product Type
+          CUSTOM_TYPE_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/product_types/" \
+            -H "Authorization: Token ${DEFECTDOJO_API_KEY}" \
+            | jq -r --arg NAME "Custom Type" '.results[] | select(.name == $NAME) | .id')
 
-          if ! echo "$RESPONSE" | jq empty > /dev/null 2>&1; then
-            echo "Error: API did not return valid JSON. Response:"
-            echo "$RESPONSE"
-            exit 1
-          fi
+          if [ -z "$CUSTOM_TYPE_ID" ]; then
+            echo "Product type 'Custom Type' does not exist. Creating it..."
 
-          PRODUCT_TYPE_ID=$(echo "$RESPONSE" | jq -r --arg NAME "$ORG_NAME" '.results[] | select(.name == $NAME) | .id')
-
-          if [ -z "$PRODUCT_TYPE_ID" ]; then
-            echo "Product type '${ORG_NAME}' does not exist. Creating it..."
-
-            CREATE_RESPONSE=$(curl -s -X POST "${DEFECTDOJO_URL}/api/v2/product_types/" \
+            CREATE_TYPE_RESPONSE=$(curl -s -X POST "${DEFECTDOJO_URL}/api/v2/product_types/" \
               -H "Authorization: Token ${DEFECTDOJO_API_KEY}" \
               -H "Content-Type: application/json" \
-              -d "{\"name\": \"${ORG_NAME}\"}")
+              -d '{"name": "Custom Type"}')
 
-            if ! echo "$CREATE_RESPONSE" | jq empty > /dev/null 2>&1; then
-              echo "Error: Failed to create product type. Response:"
-              echo "$CREATE_RESPONSE"
+            CUSTOM_TYPE_ID=$(echo "$CREATE_TYPE_RESPONSE" | jq -r '.id')
+
+            if [ -z "$CUSTOM_TYPE_ID" ]; then
+              echo "Error: Failed to create 'Custom Type'. Response:"
+              echo "$CREATE_TYPE_RESPONSE"
               exit 1
             fi
 
-            PRODUCT_TYPE_ID=$(echo "$CREATE_RESPONSE" | jq -r '.id')
-
-            if [ -z "$PRODUCT_TYPE_ID" ]; then
-              echo "Error: Could not extract product type ID. Response:"
-              echo "$CREATE_RESPONSE"
-              exit 1
-            else
-              echo "Product type '${ORG_NAME}' created successfully with ID: $PRODUCT_TYPE_ID"
-            fi
+            echo "Product type 'Custom Type' created successfully with ID: $CUSTOM_TYPE_ID"
           else
-            echo "Product type '${ORG_NAME}' already exists with ID: $PRODUCT_TYPE_ID"
+            echo "Product type 'Custom Type' already exists with ID: $CUSTOM_TYPE_ID"
+          fi
+
+          # Шаг 2: Проверка продукта
+          echo "Checking if product '${ORG_NAME}' exists in DefectDojo..."
+
+          PRODUCT_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/products/" \
+            -H "Authorization: Token ${DEFECTDOJO_API_KEY}" \
+            | jq -r --arg NAME "$ORG_NAME" '.results[] | select(.name == $NAME) | .id')
+
+          if [ -z "$PRODUCT_ID" ]; then
+            echo "Product '${ORG_NAME}' does not exist. Creating it..."
+
+            CREATE_PRODUCT_RESPONSE=$(curl -s -X POST "${DEFECTDOJO_URL}/api/v2/products/" \
+              -H "Authorization: Token ${DEFECTDOJO_API_KEY}" \
+              -H "Content-Type: application/json" \
+              -d "{\"name\": \"${ORG_NAME}\", \"prod_type\": $CUSTOM_TYPE_ID}")
+
+            PRODUCT_ID=$(echo "$CREATE_PRODUCT_RESPONSE" | jq -r '.id')
+
+            if [ -z "$PRODUCT_ID" ]; then
+              echo "Error: Failed to create product '${ORG_NAME}'. Response:"
+              echo "$CREATE_PRODUCT_RESPONSE"
+              exit 1
+            fi
+
+            echo "Product '${ORG_NAME}' created successfully with ID: $PRODUCT_ID"
+          else
+            echo "Product '${ORG_NAME}' already exists with ID: $PRODUCT_ID"
           fi
