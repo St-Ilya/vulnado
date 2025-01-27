@@ -37,7 +37,7 @@ jobs:
         env:
           DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
-          ORG_NAME: ${{ secrets.ORG_NAME }} # Название организации
+          ORG_NAME: "SemmmTest" # Название организации
         run: |
           echo "Checking if organization '${ORG_NAME}' exists in DefectDojo..."
 
