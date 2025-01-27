@@ -39,7 +39,7 @@ jobs:
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
         run: |
           # Определяем имя организации и репозитория
-          ORG_NAME="SemgaTest"
+          ORG_NAME="SemgaTestTest"
           REPO_NAME=$(basename $GITHUB_REPOSITORY)
           TOOL_NAME="Semgrep"
           PRODUCT_NAME="${ORG_NAME} - ${TOOL_NAME}"
