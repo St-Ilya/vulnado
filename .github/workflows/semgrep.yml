@@ -39,37 +39,53 @@ jobs:
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
         run: |
           # Определяем имя организации и репозитория
+          # Определяем параметры
           ORG_NAME="SemgaTestTest"
           REPO_NAME=$(basename $GITHUB_REPOSITORY)
           TOOL_NAME="Semgrep"
           PRODUCT_NAME="${ORG_NAME} - ${TOOL_NAME}"
-
-          ########################################
-          echo "Product ID: $PRODUCT_ID"
-          echo "Engagement ID: $ENGAGEMENT_ID"
-
+          
+          # Получаем ID типа продукта
+          PRODUCT_TYPE_NAME="Research and Development"
+          PRODUCT_TYPE_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/product_types/?name=${PRODUCT_TYPE_NAME}" \
+            -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
+          
+          if [ -z "$PRODUCT_TYPE_ID" ] || [ "$PRODUCT_TYPE_ID" == "null" ]; then
+            echo "Error: Product type '$PRODUCT_TYPE_NAME' not found."
+            exit 1
+          fi
+          
+          echo "Product Type ID: $PRODUCT_TYPE_ID"
+          
           # Получаем ID продукта
           PRODUCT_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/products/?name=${PRODUCT_NAME}" \
             -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
-          echo "Product ID: $PRODUCT_ID"
           
-          # Проверяем и создаем продукт, если нужно
+          # Создаем продукт, если он не существует
           if [ -z "$PRODUCT_ID" ] || [ "$PRODUCT_ID" == "null" ]; then
             PRODUCT_RESPONSE=$(curl -s -X POST "${DEFECTDOJO_URL}/api/v2/products/" \
               -H "Authorization: Token $DEFECTDOJO_API_KEY" \
               -H "Content-Type: application/json" \
               -d '{
                 "name": "'"$PRODUCT_NAME"'",
-                "description": "Product for Semgrep scans in '"$ORG_NAME"'"
+                "description": "Product for Semgrep scans in '"$ORG_NAME"'",
+                "prod_type": '"$PRODUCT_TYPE_ID"'
               }')
             echo "Product creation response: $PRODUCT_RESPONSE"
             PRODUCT_ID=$(echo "$PRODUCT_RESPONSE" | jq -r '.id')
           fi
           
+          if [ -z "$PRODUCT_ID" ] || [ "$PRODUCT_ID" == "null" ]; then
+            echo "Error: Failed to create or fetch Product ID."
+            exit 1
+          fi
+          
+          echo "Product ID: $PRODUCT_ID"
+          
           # Получаем ID engagement
+          ENGAGEMENT_NAME="$REPO_NAME"
           ENGAGEMENT_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/engagements/?name=${ENGAGEMENT_NAME}&product=${PRODUCT_ID}" \
             -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
-          echo "Engagement ID: $ENGAGEMENT_ID"
           
           # Проверяем и создаем engagement, если нужно
           if [ -z "$ENGAGEMENT_ID" ] || [ "$ENGAGEMENT_ID" == "null" ]; then
@@ -86,14 +102,13 @@ jobs:
             ENGAGEMENT_ID=$(echo "$ENGAGEMENT_RESPONSE" | jq -r '.id')
           fi
           
-          # Проверяем корректность engagement ID
           if [ -z "$ENGAGEMENT_ID" ] || ! [[ "$ENGAGEMENT_ID" =~ ^[0-9]+$ ]]; then
             echo "Error: Engagement ID is not a valid integer."
             exit 1
           fi
-
-          ####################
-
+          
+          echo "Engagement ID: $ENGAGEMENT_ID"
+          
           # Отправляем результаты сканирования в engagement
           if [ -f semgrep-results.json ]; then
             curl -X POST "${DEFECTDOJO_URL}/api/v2/import-scan/" \
