@@ -40,20 +40,40 @@ jobs:
         run: |
           # Определяем имя организации и репозитория
           # Определяем параметры
-          ORG_NAME="SemgaTest"
+          ORG_NAME="SemgaTestTest"
           REPO_NAME=$(basename $GITHUB_REPOSITORY)
           TOOL_NAME="Semgrep"
           PRODUCT_NAME="${ORG_NAME} - ${TOOL_NAME}"
           
           # Получаем ID типа продукта
-          PRODUCT_TYPE_NAME="Custom Type"
+          # Определяем имя типа продукта
+          PRODUCT_TYPE_NAME="Research and Development"
+          
+          # Пытаемся получить ID типа продукта
           PRODUCT_TYPE_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/product_types/?name=${PRODUCT_TYPE_NAME}" \
             -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
           
+          # Если тип продукта не найден, создаем его
           if [ -z "$PRODUCT_TYPE_ID" ] || [ "$PRODUCT_TYPE_ID" == "null" ]; then
-            echo "Error: Product type '$PRODUCT_TYPE_NAME' not found."
+            echo "Product type '$PRODUCT_TYPE_NAME' not found. Creating it..."
+            PRODUCT_TYPE_RESPONSE=$(curl -s -X POST "${DEFECTDOJO_URL}/api/v2/product_types/" \
+              -H "Authorization: Token $DEFECTDOJO_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "name": "'"$PRODUCT_TYPE_NAME"'",
+                "description": "Default product type for automated scans"
+              }')
+            echo "Product Type Creation Response: $PRODUCT_TYPE_RESPONSE"
+            PRODUCT_TYPE_ID=$(echo "$PRODUCT_TYPE_RESPONSE" | jq -r '.id')
+          fi
+          
+          if [ -z "$PRODUCT_TYPE_ID" ] || [ "$PRODUCT_TYPE_ID" == "null" ]; then
+            echo "Error: Failed to create or fetch Product Type ID."
             exit 1
           fi
+          
+          echo "Product Type ID: $PRODUCT_TYPE_ID"
+
           
           echo "Product Type ID: $PRODUCT_TYPE_ID"
           
