@@ -33,113 +33,37 @@ jobs:
           name: raw_report
           path: semgrep-results.json
 
-      - name: Upload Semgrep Results to DefectDojo
+      - name: Check and Create Organization in DefectDojo
         env:
           DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+          ORG_NAME: ${{ secrets.ORG_NAME }} # Название организации
         run: |
-          # Определяем имя организации и репозитория
-          # Определяем параметры
-          ORG_NAME="SemgaTestTest"
-          REPO_NAME=$(basename $GITHUB_REPOSITORY)
-          TOOL_NAME="Semgrep"
-          PRODUCT_NAME="${ORG_NAME} - ${TOOL_NAME}"
-          
-          # Получаем ID типа продукта
-          # Определяем имя типа продукта
-          PRODUCT_TYPE_NAME="Research and Development"
-          
-          # Пытаемся получить ID типа продукта
-          PRODUCT_TYPE_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/product_types/?name=${PRODUCT_TYPE_NAME}" \
-            -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[] | select(.name=="'"$PRODUCT_TYPE_NAME"'") | .id')
-          
-          # Если тип продукта не найден, создаем его
-          if [ -z "$PRODUCT_TYPE_ID" ] || [ "$PRODUCT_TYPE_ID" == "null" ]; then
-            echo "Product type '$PRODUCT_TYPE_NAME' not found. Creating it..."
-            PRODUCT_TYPE_RESPONSE=$(curl -s -X POST "${DEFECTDOJO_URL}/api/v2/product_types/" \
-              -H "Authorization: Token $DEFECTDOJO_API_KEY" \
+          echo "Checking if organization '${ORG_NAME}' exists in DefectDojo..."
+
+          # Получение ID организации
+          ORG_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/organizations/" \
+            -H "Authorization: Token ${DEFECTDOJO_API_KEY}" \
+            | jq -r --arg NAME "$ORG_NAME" '.results[] | select(.name == $NAME) | .id')
+
+          if [ -z "$ORG_ID" ]; then
+            echo "Organization '${ORG_NAME}' does not exist. Creating it..."
+
+            # Создаем организацию, если она не существует
+            CREATE_RESPONSE=$(curl -s -X POST "${DEFECTDOJO_URL}/api/v2/organizations/" \
+              -H "Authorization: Token ${DEFECTDOJO_API_KEY}" \
               -H "Content-Type: application/json" \
-              -d '{
-                "name": "'"$PRODUCT_TYPE_NAME"'",
-                "description": "Default product type for automated scans"
-              }')
-            echo "Product Type Creation Response: $PRODUCT_TYPE_RESPONSE"
-            PRODUCT_TYPE_ID=$(echo "$PRODUCT_TYPE_RESPONSE" | jq -r '.id')
-          fi
-          
-          # Проверяем, что ID типа продукта корректно найден или создан
-          if [ -z "$PRODUCT_TYPE_ID" ] || [ "$PRODUCT_TYPE_ID" == "null" ]; then
-            echo "Error: Failed to create or fetch Product Type ID."
-            exit 1
-          fi
-          
-          echo "Product Type ID: $PRODUCT_TYPE_ID"
-          
-          echo "Product Type ID: $PRODUCT_TYPE_ID"
-          
-          # Получаем ID продукта
-          PRODUCT_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/products/?name=${PRODUCT_NAME}" \
-            -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
-          
-          # Создаем продукт, если он не существует
-          if [ -z "$PRODUCT_ID" ] || [ "$PRODUCT_ID" == "null" ]; then
-            PRODUCT_RESPONSE=$(curl -s -X POST "${DEFECTDOJO_URL}/api/v2/products/" \
-              -H "Authorization: Token $DEFECTDOJO_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d '{
-                "name": "'"$PRODUCT_NAME"'",
-                "description": "Product for Semgrep scans in '"$ORG_NAME"'",
-                "prod_type": '"$PRODUCT_TYPE_ID"'
-              }')
-            echo "Product creation response: $PRODUCT_RESPONSE"
-            PRODUCT_ID=$(echo "$PRODUCT_RESPONSE" | jq -r '.id')
-          fi
-          
-          if [ -z "$PRODUCT_ID" ] || [ "$PRODUCT_ID" == "null" ]; then
-            echo "Error: Failed to create or fetch Product ID."
-            exit 1
-          fi
-          
-          echo "Product ID: $PRODUCT_ID"
-          
-          # Получаем ID engagement
-          ENGAGEMENT_NAME="$REPO_NAME"
-          ENGAGEMENT_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/engagements/?name=${ENGAGEMENT_NAME}&product=${PRODUCT_ID}" \
-            -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
-          
-          # Проверяем и создаем engagement, если нужно
-          if [ -z "$ENGAGEMENT_ID" ] || [ "$ENGAGEMENT_ID" == "null" ]; then
-            ENGAGEMENT_RESPONSE=$(curl -s -X POST "${DEFECTDOJO_URL}/api/v2/engagements/" \
-              -H "Authorization: Token $DEFECTDOJO_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d '{
-                "name": "'"$ENGAGEMENT_NAME"'",
-                "product": '"$PRODUCT_ID"',
-                "status": "In Progress",
-                "engagement_type": "CI/CD"
-              }')
-            echo "Engagement creation response: $ENGAGEMENT_RESPONSE"
-            ENGAGEMENT_ID=$(echo "$ENGAGEMENT_RESPONSE" | jq -r '.id')
-          fi
-          
-          if [ -z "$ENGAGEMENT_ID" ] || ! [[ "$ENGAGEMENT_ID" =~ ^[0-9]+$ ]]; then
-            echo "Error: Engagement ID is not a valid integer."
-            exit 1
-          fi
-          
-          echo "Engagement ID: $ENGAGEMENT_ID"
-          
-          # Отправляем результаты сканирования в engagement
-          if [ -f semgrep-results.json ]; then
-            curl -X POST "${DEFECTDOJO_URL}/api/v2/import-scan/" \
-              -H "Authorization: Token $DEFECTDOJO_API_KEY" \
-              -H "Content-Type: multipart/form-data" \
-              -F "scan_type=${TOOL_NAME} JSON Report" \
-              -F "file=@semgrep-results.json" \
-              -F "engagement=$ENGAGEMENT_ID" \
-              -F 'auto_reimport=True' \
-              -F 'minimum_severity=Info'
+              -d "{\"name\": \"${ORG_NAME}\"}")
+
+            ORG_ID=$(echo $CREATE_RESPONSE | jq -r '.id')
+
+            if [ -z "$ORG_ID" ]; then
+              echo "Failed to create organization. Response:"
+              echo "$CREATE_RESPONSE"
+              exit 1
+            else
+              echo "Organization '${ORG_NAME}' created successfully with ID: $ORG_ID"
+            fi
           else
-            echo "Error: semgrep-results.json not found!"
-            exit 1
+            echo "Organization '${ORG_NAME}' already exists with ID: $ORG_ID"
           fi
