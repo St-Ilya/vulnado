@@ -40,7 +40,7 @@ jobs:
         run: |
           # Определяем имя организации и репозитория
           # Определяем параметры
-          ORG_NAME="SemgaTestTest"
+          ORG_NAME="SemgaTest"
           REPO_NAME=$(basename $GITHUB_REPOSITORY)
           TOOL_NAME="Semgrep"
           PRODUCT_NAME="${ORG_NAME} - ${TOOL_NAME}"
