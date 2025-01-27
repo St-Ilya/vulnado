@@ -23,29 +23,72 @@ jobs:
         run: | 
           semgrep \
             --json \
-            --output semgrep-results.json\
+            --output semgrep-results.json \
             --metrics=off \
             --config="p/default"
+
       - name: Save raw report
         uses: actions/upload-artifact@v4
         with:
           name: raw_report
           path: semgrep-results.json
 
-      # Шаг 3: Отправка результатов в DefectDojo
       - name: Upload Semgrep Results to DefectDojo
         env:
           DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
         run: |
+          # Определяем имя организации и репозитория
+          ORG_NAME=$(echo $GITHUB_REPOSITORY_OWNER)
+          REPO_NAME=$(basename $GITHUB_REPOSITORY)
+          TOOL_NAME="Semgrep"
+          PRODUCT_NAME="${ORG_NAME} - ${TOOL_NAME}"
+
+          # Получаем ID продукта
+          PRODUCT_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/products/?name=${PRODUCT_NAME}" \
+            -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
+
+          # Если продукт не существует, создаем его
+          if [ "$PRODUCT_ID" == "null" ]; then
+            PRODUCT_RESPONSE=$(curl -s -X POST "${DEFECTDOJO_URL}/api/v2/products/" \
+              -H "Authorization: Token $DEFECTDOJO_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "name": "'"$PRODUCT_NAME"'",
+                "description": "Product for Semgrep scans in '"$ORG_NAME"'"
+              }')
+            PRODUCT_ID=$(echo "$PRODUCT_RESPONSE" | jq -r '.id')
+          fi
+
+          # Проверяем наличие engagement для репозитория
+          ENGAGEMENT_NAME="$REPO_NAME"
+          ENGAGEMENT_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/engagements/?name=${ENGAGEMENT_NAME}&product=${PRODUCT_ID}" \
+            -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
+
+          # Если engagement не существует, создаем его
+          if [ "$ENGAGEMENT_ID" == "null" ]; then
+            ENGAGEMENT_RESPONSE=$(curl -s -X POST "${DEFECTDOJO_URL}/api/v2/engagements/" \
+              -H "Authorization: Token $DEFECTDOJO_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "name": "'"$ENGAGEMENT_NAME"'",
+                "product": '"$PRODUCT_ID"',
+                "status": "In Progress",
+                "engagement_type": "CI/CD"
+              }')
+            ENGAGEMENT_ID=$(echo "$ENGAGEMENT_RESPONSE" | jq -r '.id')
+          fi
+
+          # Отправляем результаты сканирования в engagement
           if [ -f semgrep-results.json ]; then
             curl -X POST "${DEFECTDOJO_URL}/api/v2/import-scan/" \
-            -H "Authorization: Token $DEFECTDOJO_API_KEY" \
-            -H "Content-Type: multipart/form-data" \
-            -F 'scan_type=Semgrep JSON Report' \
-            -F "file=@semgrep-results.json" \
-            -F 'engagement=6' \
-            -F 'minimum_severity=Info'
+              -H "Authorization: Token $DEFECTDOJO_API_KEY" \
+              -H "Content-Type: multipart/form-data" \
+              -F "scan_type=${TOOL_NAME} JSON Report" \
+              -F "file=@semgrep-results.json" \
+              -F "engagement=$ENGAGEMENT_ID" \
+              -F 'auto_reimport=True' \
+              -F 'minimum_severity=Info'
           else
             echo "Error: semgrep-results.json not found!"
             exit 1
