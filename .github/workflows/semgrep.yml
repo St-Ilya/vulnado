@@ -41,6 +41,14 @@ jobs:
         run: |
           echo "Checking if organization '${ORG_NAME}' exists in DefectDojo..."
 
+          # Получение данных об организациях
+          RESPONSE=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/organizations/" \
+            -H "Authorization: Token ${DEFECTDOJO_API_KEY}")
+          
+          echo "API Response: $RESPONSE"  # Печать полного ответа для отладки
+          
+          ORG_ID=$(echo "$RESPONSE" | jq -r --arg NAME "$ORG_NAME" '.results[] | select(.name == $NAME) | .id')
+
           # Получение ID организации
           ORG_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/organizations/" \
             -H "Authorization: Token ${DEFECTDOJO_API_KEY}" \
