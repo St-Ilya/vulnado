@@ -44,12 +44,17 @@ jobs:
           TOOL_NAME="Semgrep"
           PRODUCT_NAME="${ORG_NAME} - ${TOOL_NAME}"
 
+          ########################################
+          echo "Product ID: $PRODUCT_ID"
+          echo "Engagement ID: $ENGAGEMENT_ID"
+
           # Получаем ID продукта
           PRODUCT_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/products/?name=${PRODUCT_NAME}" \
             -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
-
-          # Если продукт не существует, создаем его
-          if [ "$PRODUCT_ID" == "null" ]; then
+          echo "Product ID: $PRODUCT_ID"
+          
+          # Проверяем и создаем продукт, если нужно
+          if [ -z "$PRODUCT_ID" ] || [ "$PRODUCT_ID" == "null" ]; then
             PRODUCT_RESPONSE=$(curl -s -X POST "${DEFECTDOJO_URL}/api/v2/products/" \
               -H "Authorization: Token $DEFECTDOJO_API_KEY" \
               -H "Content-Type: application/json" \
@@ -57,16 +62,17 @@ jobs:
                 "name": "'"$PRODUCT_NAME"'",
                 "description": "Product for Semgrep scans in '"$ORG_NAME"'"
               }')
+            echo "Product creation response: $PRODUCT_RESPONSE"
             PRODUCT_ID=$(echo "$PRODUCT_RESPONSE" | jq -r '.id')
           fi
-
-          # Проверяем наличие engagement для репозитория
-          ENGAGEMENT_NAME="$REPO_NAME"
+          
+          # Получаем ID engagement
           ENGAGEMENT_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/engagements/?name=${ENGAGEMENT_NAME}&product=${PRODUCT_ID}" \
             -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
-
-          # Если engagement не существует, создаем его
-          if [ "$ENGAGEMENT_ID" == "null" ]; then
+          echo "Engagement ID: $ENGAGEMENT_ID"
+          
+          # Проверяем и создаем engagement, если нужно
+          if [ -z "$ENGAGEMENT_ID" ] || [ "$ENGAGEMENT_ID" == "null" ]; then
             ENGAGEMENT_RESPONSE=$(curl -s -X POST "${DEFECTDOJO_URL}/api/v2/engagements/" \
               -H "Authorization: Token $DEFECTDOJO_API_KEY" \
               -H "Content-Type: application/json" \
@@ -76,8 +82,17 @@ jobs:
                 "status": "In Progress",
                 "engagement_type": "CI/CD"
               }')
+            echo "Engagement creation response: $ENGAGEMENT_RESPONSE"
             ENGAGEMENT_ID=$(echo "$ENGAGEMENT_RESPONSE" | jq -r '.id')
           fi
+          
+          # Проверяем корректность engagement ID
+          if [ -z "$ENGAGEMENT_ID" ] || ! [[ "$ENGAGEMENT_ID" =~ ^[0-9]+$ ]]; then
+            echo "Error: Engagement ID is not a valid integer."
+            exit 1
+          fi
+
+          ####################
 
           # Отправляем результаты сканирования в engagement
           if [ -f semgrep-results.json ]; then
