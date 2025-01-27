@@ -51,7 +51,7 @@ jobs:
           
           # Пытаемся получить ID типа продукта
           PRODUCT_TYPE_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/product_types/?name=${PRODUCT_TYPE_NAME}" \
-            -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
+            -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[] | select(.name=="'"$PRODUCT_TYPE_NAME"'") | .id')
           
           # Если тип продукта не найден, создаем его
           if [ -z "$PRODUCT_TYPE_ID" ] || [ "$PRODUCT_TYPE_ID" == "null" ]; then
@@ -67,13 +67,13 @@ jobs:
             PRODUCT_TYPE_ID=$(echo "$PRODUCT_TYPE_RESPONSE" | jq -r '.id')
           fi
           
+          # Проверяем, что ID типа продукта корректно найден или создан
           if [ -z "$PRODUCT_TYPE_ID" ] || [ "$PRODUCT_TYPE_ID" == "null" ]; then
             echo "Error: Failed to create or fetch Product Type ID."
             exit 1
           fi
           
           echo "Product Type ID: $PRODUCT_TYPE_ID"
-
           
           echo "Product Type ID: $PRODUCT_TYPE_ID"
           
