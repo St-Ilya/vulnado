@@ -46,7 +46,7 @@ jobs:
           PRODUCT_NAME="${ORG_NAME} - ${TOOL_NAME}"
           
           # Получаем ID типа продукта
-          PRODUCT_TYPE_NAME="Research and Development"
+          PRODUCT_TYPE_NAME="Custom Type"
           PRODUCT_TYPE_ID=$(curl -s -X GET "${DEFECTDOJO_URL}/api/v2/product_types/?name=${PRODUCT_TYPE_NAME}" \
             -H "Authorization: Token $DEFECTDOJO_API_KEY" | jq -r '.results[0].id')
           
