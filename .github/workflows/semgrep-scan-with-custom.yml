@@ -30,7 +30,7 @@ jobs:
       - name: Run Semgrep
         run: | 
           semgrep \
-            --gitlab-sast --output semgrep.json
+            --gitlab-sast --output semgrep.json \
             --metrics=off \
             --config=./forJavaLang
 
