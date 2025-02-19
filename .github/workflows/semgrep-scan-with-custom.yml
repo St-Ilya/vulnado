@@ -19,13 +19,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Checkout private rules
+        uses: actions/checkout@v4
+        with:
+          repository: St-Ilya/rules
+          path: forJavaLang
+          token: ${{ secrets.SEMGA_PAT }}
+
       - name: Run Semgrep
         run: | 
           semgrep \
             --sarif \
             --output semgrep-results.sarif \
             --metrics=off \
-            --config="p/default"
+            --config=./forJavaLang
 
       - name: Save raw report
         uses: actions/upload-artifact@v4
