@@ -33,6 +33,7 @@ jobs:
             --sarif \
             --output semgrep-results.sarif \
             --metrics=off \
+            --sarif-rule-severity \
             --config=./forJavaLang
 
       - name: Save raw report
