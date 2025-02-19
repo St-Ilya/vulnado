@@ -30,21 +30,47 @@ jobs:
       - name: Run Semgrep
         run: | 
           semgrep \
-            --sarif \
-            --output semgrep-results.sarif \
+            --gitlab-sast --output semgrep.json
             --metrics=off \
-            --sarif-rule-severity \
             --config=./forJavaLang
 
       - name: Save raw report
         uses: actions/upload-artifact@v4
         with:
           name: raw_report
-          path: semgrep-results.sarif
+          path: semgrep.json
 
-      - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Create edited report
+        run: |
+          cat semgrep.json | jq '[.vulnerabilities[] | { category, description, location, severity }]' > semgrep_edited.json
+      
+      - name: Save edited report
+        uses: actions/upload-artifact@v4
         with:
-          sarif_file: semgrep-results.sarif
-          token: ${{ secrets.GITHUB_TOKEN }}
-        if: always()
+          name: edited_report
+          path: semgrep_edited.json
+      
+      - name: Display in the console
+        run: |
+          cat semgrep_edited.json
+
+      - name: Check
+        id: check_s
+        run: |
+          if jq -e '[.[] | select(.severity=="Medium" or .severity=="High" or .severity=="Critical")]' semgrep_edited.json > /dev/null; then
+            echo "found=true" >> $GITHUB_ENV
+            jq '[.[] | select(.severity=="Medium" or .severity=="High" or .severity=="Critical")]' semgrep_edited.json > findings.json
+          else
+            echo "found=false" >> $GITHUB_ENV
+          fi
+          if jq -e 'length == 0' findings.json > /dev/null; then
+            echo "resultMessage=No Semgrep results found" >> $GITHUB_ENV
+          else
+            echo "resultMessage=Semgrep results found" >> $GITHUB_ENV
+          fi
+
+      - name: Save finding report
+        uses: actions/upload-artifact@v4
+        with:
+          name: findings_report
+          path: findings.json
