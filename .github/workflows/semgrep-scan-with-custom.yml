@@ -32,8 +32,7 @@ jobs:
           semgrep \
             --gitlab-sast --output semgrep.json \
             --metrics=off \
-            --config=./javaProRules \
-            --config=./kotlinProRules
+            --config=./javaProRules
 
       - name: Save raw report
         uses: actions/upload-artifact@v4
