@@ -32,6 +32,7 @@ jobs:
           semgrep \
             --gitlab-sast --output semgrep.json \
             --metrics=off \
+            --config="p/default" \
             --config=./semgrep-rules/javaProRules
 
       - name: Save raw report
