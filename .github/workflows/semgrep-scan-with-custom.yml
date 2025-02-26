@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: St-Ilya/rules
-          path: javaProRules
+          path: semgrep-rules
           token: ${{ secrets.SEMGA_PAT }}
 
       - name: Run Semgrep
@@ -32,7 +32,7 @@ jobs:
           semgrep \
             --gitlab-sast --output semgrep.json \
             --metrics=off \
-            --config=./javaProRules
+            --config=./semgrep-rules/javaProRules
 
       - name: Save raw report
         uses: actions/upload-artifact@v4
