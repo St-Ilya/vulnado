@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: St-Ilya/rules
-          path: forJavaLang
+          path: javaProRules
           token: ${{ secrets.SEMGA_PAT }}
 
       - name: Run Semgrep
