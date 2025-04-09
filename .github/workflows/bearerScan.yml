@@ -23,7 +23,7 @@ jobs:
 
       - name: Start Bearer
         run: |
-          bearer scan .
+          bearer scan . --format sarif --output resultsBearer.sarif
           
       - name: Upload SARIF file
         if: always()
