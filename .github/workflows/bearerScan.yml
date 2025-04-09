@@ -8,17 +8,23 @@ on:
     
 permissions:
   contents: read
+  security-events: write
 
 jobs:
   rule_check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Bearer
-        uses: bearer/bearer-action@v2
-        with:
-          format: sarif
-          output: resultsBearer.sarif
+      
+      - name: Install Bearer
+        run: |
+          wget https://github.com/Bearer/bearer/releases/tag/v1.49.0/bearer_1.49.0_linux-amd64.deb 
+          sudo dpkg -i bearer_1.49.0_linux-amd64.deb
+
+      - name: Start Bearer
+        run: |
+          bearer scan .
+          
       - name: Upload SARIF file
         if: always()
         uses: github/codeql-action/upload-sarif@v2
