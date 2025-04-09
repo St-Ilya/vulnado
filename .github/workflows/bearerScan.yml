@@ -18,7 +18,7 @@ jobs:
       
       - name: Install Bearer
         run: |
-          wget https://github.com/Bearer/bearer/releases/tag/v1.49.0/bearer_1.49.0_linux-amd64.deb 
+          wget https://github.com/Bearer/bearer/releases/download/v1.49.0/bearer_1.49.0_linux-amd64.deb 
           sudo dpkg -i bearer_1.49.0_linux-amd64.deb
 
       - name: Start Bearer
