@@ -1,0 +1,217 @@
+name: Run Semgrep link test
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: read   # нужно для получения прямой download-ссылки артефакта
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Semgrep без контейнера: ставим через pipx и фиксируем версию
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Semgrep
+        run: |
+          python -m pip install --upgrade pip pipx
+          pipx install "semgrep==1.140.0"
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          semgrep --version
+
+      # (опционально) кэш правил Semgrep
+      - name: Cache Semgrep rules
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/semgrep
+          key: semgrep-rules-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            semgrep-rules-${{ runner.os }}-
+
+      - name: Run Semgrep
+        run: |
+          semgrep \
+            --gitlab-sast --output semgrep.json \
+            --metrics=off \
+            --config="p/default"
+
+      - name: Upload raw report (semgrep.json)
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw_report
+          path: semgrep.json
+          retention-days: 14
+
+      # Node.js для пост-обработки и HTML
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Create edited JSON (Node)
+        run: |
+          node - <<'JS'
+          const fs = require('fs');
+          const src = JSON.parse(fs.readFileSync('semgrep.json','utf8'));
+          const out = (src.vulnerabilities || []).map(v => ({
+            category: v.category,
+            description: v.description,
+            location: v.location,
+            severity: v.severity
+          }));
+          fs.writeFileSync('semgrep_edited.json', JSON.stringify(out, null, 2));
+          JS
+
+      - name: Upload edited report
+        uses: actions/upload-artifact@v4
+        with:
+          name: edited_report
+          path: semgrep_edited.json
+          retention-days: 14
+
+      - name: Display in the console
+        run: cat semgrep_edited.json
+
+      - name: Check & build findings (Node)
+        id: check_s
+        shell: bash
+        run: |
+          node - <<'JS'
+          const fs = require('fs');
+          const rows = JSON.parse(fs.readFileSync('semgrep_edited.json','utf8'));
+          const important = rows.filter(r =>
+            ['Medium','High','Critical'].includes(String(r.severity||''))
+          );
+          fs.writeFileSync('findings.json', JSON.stringify(important, null, 2));
+          const found = important.length > 0 ? 'true' : 'false';
+          const msg = important.length === 0 ? 'No Semgrep results found' : 'Semgrep results found';
+          // выводим в GITHUB_ENV
+          fs.appendFileSync(process.env.GITHUB_ENV, `found=${found}\nresultMessage=${msg}\n`);
+          // и в GITHUB_OUTPUT — пригодится ниже
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `count=${important.length}\n`);
+          JS
+
+      - name: Upload findings report
+        uses: actions/upload-artifact@v4
+        with:
+          name: findings_report
+          path: findings.json
+          retention-days: 14
+
+      # Коммент в PR со ссылкой на страницу артефактов и количеством находок
+      - name: Build artifacts page URL
+        id: artifact_url
+        run: echo "url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}#artifacts" >> "$GITHUB_OUTPUT"
+
+      - name: Comment artifacts page link in PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const url = `${{ steps.artifact_url.outputs.url }}`;
+            const count = `${{ steps.check_s.outputs.count }}`;
+            const body = [
+              "🧩 **Semgrep**",
+              "",
+              `Найдено: **${count}** важных находок (Medium/High/Critical).`,
+              `➡️ [Скачать/посмотреть отчёты (страница артефактов)](${url})`,
+              "",
+              "_Файлы: `semgrep.json`, `semgrep_edited.json`, `findings.json`_"
+            ].join("\n");
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body
+            });
+
+      # HTML-отчёт (Node) + отдельный артефакт + прямая download-ссылка на ZIP
+      - name: Build HTML report (Node)
+        run: |
+          node - <<'JS'
+          const fs = require('fs');
+          const rows = JSON.parse(fs.readFileSync('semgrep_edited.json','utf8'));
+          const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+          const tr = r => `
+            <tr>
+              <td>${esc(r.severity)}</td>
+              <td>${esc(r.category)}</td>
+              <td>${esc(r.description)}</td>
+              <td><code>${esc(r.location?.file||'')}</code>${r.location?.start_line?`:${r.location.start_line}`:''}</td>
+            </tr>`;
+          const html = `<!doctype html>
+          <meta charset="utf-8">
+          <title>Semgrep report</title>
+          <style>
+            body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;margin:24px}
+            h1{margin:0 0 16px}
+            table{border-collapse:collapse;width:100%}
+            th,td{border:1px solid #ddd;padding:8px;vertical-align:top}
+            th{background:#f7f7f7;text-align:left}
+            tr:nth-child(even){background:#fafafa}
+          </style>
+          <h1>Semgrep report</h1>
+          <p>Total: <b>${rows.length}</b></p>
+          <table>
+            <thead><tr><th>Severity</th><th>Category</th><th>Description</th><th>Location</th></tr></thead>
+            <tbody>${rows.map(tr).join('')}</tbody>
+          </table>`;
+          fs.writeFileSync('semgrep-report.html', html);
+          JS
+
+      - name: Upload HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-html
+          path: semgrep-report.html
+          retention-days: 14
+
+      - name: Get direct artifact download URL
+        id: html_art
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const { data } = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.runId
+            });
+            const art = data.artifacts.find(a => a.name === 'semgrep-html');
+            if (!art) core.setFailed('Artifact "semgrep-html" not found');
+            core.setOutput('download_url', art.archive_download_url);
+
+      - name: Comment direct ZIP link in PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const url = `${{ steps.html_art.outputs.download_url }}`;
+            const body = [
+              "🧩 **Semgrep HTML report**",
+              "➡️ [Скачать ZIP с отчётом (внутренний артефакт)](" + url + ")",
+              "",
+              "_Внутри: `semgrep-report.html`_"
+            ].join("\n");
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body
+            });
