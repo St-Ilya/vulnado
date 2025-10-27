@@ -144,4 +144,71 @@ jobs:
               issue_number: context.payload.pull_request.number,
               body
             });
+            
+#html momnet
+
+      - name: Build HTML report
+        run: |
+          node - <<'JS'
+          const fs = require('fs');
+          const rows = JSON.parse(fs.readFileSync('semgrep_edited.json','utf8'));
+          const esc = s => String(s??'').replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+          const tr = r => `
+            <tr>
+              <td>${esc(r.severity)}</td>
+              <td>${esc(r.category)}</td>
+              <td>${esc(r.description)}</td>
+              <td><code>${esc(r.location?.file||'')}</code>${r.location?.start_line?`:${r.location.start_line}`:''}</td>
+            </tr>`;
+          const html = `<!doctype html>
+          <meta charset="utf-8">
+          <title>Semgrep report</title>
+          <style>
+            body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif; margin:24px}
+            h1{margin:0 0 16px}
+            table{border-collapse:collapse; width:100%}
+            th,td{border:1px solid #ddd; padding:8px; vertical-align:top}
+            th{background:#f7f7f7; text-align:left}
+            tr:nth-child(even){background:#fafafa}
+            .pill{display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid #ccc; font-size:12px}
+          </style>
+          <h1>Semgrep report</h1>
+          <p>Total: <b>${rows.length}</b></p>
+          <table>
+            <thead><tr><th>Severity</th><th>Category</th><th>Description</th><th>Location</th></tr></thead>
+            <tbody>${rows.map(tr).join('')}</tbody>
+          </table>`;
+          fs.writeFileSync('semgrep-report.html', html);
+          JS
+
+      - name: Upload HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-html
+          path: semgrep-report.html
+          retention-days: 14
+
+      - name: Build artifact URL (page)
+        id: artifacts_url
+        run: echo "url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}#artifacts" >> $GITHUB_OUTPUT
+
+      - name: Comment link in PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const url = `${{ steps.artifacts_url.outputs.url }}`;
+            const body = [
+              "🧩 **Semgrep HTML report**",
+              `➡️ [Открыть/скачать (артефакты рана)](${url})`,
+              "_Файл: `semgrep-report.html`_"
+            ].join("\n");
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body
+            });
+
 
