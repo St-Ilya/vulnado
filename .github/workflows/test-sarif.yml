@@ -1,7 +1,14 @@
 name: Static Analysis (Custom SARIF)
 
 on:
-  workflow_call:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+    
+permissions:
+  contents: read
+  security-events: write
     
 jobs:
   analyze:
