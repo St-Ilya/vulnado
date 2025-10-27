@@ -1,0 +1,146 @@
+name: Run Semgrep link test
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+    
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-22.04
+    container:
+      image: returntocorp/semgrep:1.140.0
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: | 
+          semgrep \
+            --gitlab-sast --output semgrep.json\
+            --metrics=off \
+            --config="p/default"
+
+      - name: Save raw report
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw_report
+          path: semgrep.json
+
+      - name: Create edited report
+        run: |
+          cat semgrep.json | jq '[.vulnerabilities[] | { category, description, location, severity }]' > semgrep_edited.json
+      
+      - name: Save edited report
+        uses: actions/upload-artifact@v4
+        with:
+          name: edited_report
+          path: semgrep_edited.json
+      
+      - name: Display in the console
+        run: |
+          cat semgrep_edited.json
+
+      - name: Check
+        id: check_s
+        run: |
+          if jq -e '[.[] | select(.severity=="Medium" or .severity=="High" or .severity=="Critical")]' semgrep_edited.json > /dev/null; then
+            echo "found=true" >> $GITHUB_ENV
+            jq '[.[] | select(.severity=="Medium" or .severity=="High" or .severity=="Critical")]' semgrep_edited.json > findings.json
+          else
+            echo "found=false" >> $GITHUB_ENV
+          fi
+          if jq -e 'length == 0' findings.json > /dev/null; then
+            echo "resultMessage=No Semgrep results found" >> $GITHUB_ENV
+          else
+            echo "resultMessage=Semgrep results found" >> $GITHUB_ENV
+          fi
+
+      - name: Save finding report
+        uses: actions/upload-artifact@v4
+        with:
+          name: findings_report
+          path: findings.json
+        
+      - name: Find and Update Comment with Semgrep Results
+        if: env.found == 'true'
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('fs');
+            const semgrepResults = fs.readFileSync('findings.json', 'utf8');
+            const pr_number = context.payload.pull_request.number;
+            const comments = await github.issues.listComments({ 
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr_number,
+            });
+            const existingComment = comments.data.find(comment => comment.body.includes('Semgrep analysis results:'));
+            if (existingComment) {  
+              await github.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: `Semgrep analysis results:\n\`\`\`json\n${semgrepResults}\n\`\`\``,
+              });
+            } else {
+              await github.issues.createComment({
+                issue_number: pr_number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `Semgrep analysis results:\n\`\`\`json\n${semgrepResults}\n\`\`\``,
+              });
+            }
+# link moment
+      - name: Upload SARIF / JSON as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-artifacts
+          path: |
+            semgrep.json
+            semgrep_edited.json
+            findings.json
+          retention-days: 14
+
+      - name: Build artifact URL
+        id: artifact_url
+        run: |
+          echo "url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}#artifacts" >> "$GITHUB_OUTPUT"
+          # заодно посчитаем количество находок для красоты
+          if [ -f findings.json ]; then
+            echo "count=$(jq 'length' findings.json)" >> "$GITHUB_OUTPUT"
+          else
+            echo "count=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment link in PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const url = `${{ steps.artifact_url.outputs.url }}`;
+            const count = `${{ steps.artifact_url.outputs.count }}`;
+            const body = [
+              "🧩 **Semgrep**",
+              "",
+              `Найдено: **${count}** важных находок (Medium/High/Critical).`,
+              `➡️ [Скачать/посмотреть отчёты (артефакты ранa)](${url})`,
+              "",
+              "_Файлы: `semgrep.json`, `semgrep_edited.json`, `findings.json`_"
+            ].join("\n");
+            const { context, github } = require("@actions/github");
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body
+            });
