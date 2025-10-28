@@ -1,0 +1,134 @@
+name: Static Analysis (Custom SARIF)
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+    
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+    
+jobs:
+  analyze:
+    runs-on: ubuntu-22.04
+    container:
+      image: returntocorp/semgrep:1.140.0
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Run Semgrep
+        run: |
+          semgrep \
+            --sarif --output semgrep.sarif\
+            --metrics=off \
+            --config="p/default"
+            
+      - name: Upload SARIF as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-report
+          path: semgrep.sarif
+
+      - name: Comment SARIF summary in PR
+        uses: actions/github-script@v6
+        if: github.event_name == 'pull_request'
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const summary = require('fs').readFileSync('semgrep.sarif', 'utf8');
+            const results = JSON.parse(summary).runs[0].results.length;
+            const pr = context.payload.pull_request.number;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr,
+              body: `Static analysis found ${results} issues. Download full SARIF from workflow artifacts.`
+            });
+
+      - name: Comment SARIF results in PR
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('fs');
+            const sarif = JSON.parse(fs.readFileSync('semgrep.sarif', 'utf8'));
+            const results = sarif.runs?.[0]?.results || [];
+            const prNumber = context.payload.pull_request.number;
+      
+            if (results.length === 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: "✅ Static analysis found **0 issues.**",
+              });
+              return;
+            }
+      
+            // Упрощаем SARIF до читаемого JSON
+            const simplified = results.map(r => ({
+              rule: r.ruleId,
+              message: r.message?.text,
+              level: r.level,
+              location: r.locations?.[0]?.physicalLocation?.artifactLocation?.uri,
+              startLine: r.locations?.[0]?.physicalLocation?.region?.startLine,
+            }));
+      
+            // Ограничим длину комментария, чтобы не превысить лимит
+            const summary = JSON.stringify(simplified, null, 2);
+            const trimmed = summary.length > 60000 ? summary.slice(0, 60000) + "\n... (truncated)" : summary;
+      
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: `### 🧪 Static Analysis (SARIF)\n\`\`\`json\n${trimmed}\n\`\`\``,
+            });
+
+      - name: Comment SARIF results in PR without json format
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('fs');
+            const sarif = JSON.parse(fs.readFileSync('semgrep.sarif', 'utf8'));
+            const results = sarif.runs?.[0]?.results || [];
+            const prNumber = context.payload.pull_request.number;
+      
+            if (results.length === 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: "✅ Static analysis found **0 issues.**",
+              });
+              return;
+            }
+      
+            // Упрощаем SARIF до читаемого JSON
+            const simplified = results.map(r => ({
+              rule: r.ruleId,
+              message: r.message?.text,
+              level: r.level,
+              location: r.locations?.[0]?.physicalLocation?.artifactLocation?.uri,
+              startLine: r.locations?.[0]?.physicalLocation?.region?.startLine,
+            }));
+      
+            // Ограничим длину комментария, чтобы не превысить лимит
+            const summary = JSON.stringify(simplified, null, 2);
+            const trimmed = summary.length > 60000 ? summary.slice(0, 60000) + "\n... (truncated)" : summary;
+      
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: `### 🧪 Static Analysis (SARIF)\n\`\`\`json\n${sarif}\n\`\`\``,
+            });
+
