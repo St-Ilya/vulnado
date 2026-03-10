@@ -1,0 +1,65 @@
+name: Run Trivy
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  scan_dep:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Trivy SLA
+        run: |
+          wget https://github.com/aquasecurity/trivy/releases/download/v0.69.3/trivy_0.69.3_Linux-64bit.deb
+          sudo dpkg -i trivy_0.69.3_Linux-64bit.deb
+
+      - name: Scan vulnerabilities
+        run: |
+          trivy fs . \
+          --format table -o trivy-report.json
+
+      - name: Save report
+        uses: actions/upload-artifact@v4
+        with:
+          name: report_trivy
+          path: trivy-report.json
+
+      - name: Find and Update Comment with Trivy Results
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('fs');
+            const trivyResults = fs.readFileSync('trivy-report.json', 'utf8');
+            const pr_number = context.payload.pull_request.number;
+        
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr_number,
+            });
+        
+            const existingComment = comments.find(comment => comment.body.includes('Trivy results:'));
+      
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: `### Trivy results:\n\`\`\`text\n${trivyResults}\n\`\`\``,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: pr_number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `### Trivy results:\n\`\`\`text\n${trivyResults}\n\`\`\``,
+              });
+            }
